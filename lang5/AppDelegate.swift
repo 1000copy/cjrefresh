@@ -20,12 +20,11 @@ class Nav: UINavigationController {
         super.viewDidLoad()
         self.view.backgroundColor = .white
         self.pushViewController(LangTableViewController(style:.plain), animated: true)
-        print(self.navigationBar.bounds)
     }
 }
 class LangTableViewController : RefreshableTVC{
-    let arr = ["swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby"]
-//    let arr = ["swift","obj-c","ruby","swift"]
+//    let arr = ["swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby","swift","obj-c","ruby"]
+    let arr = ["swift","obj-c","ruby","swift"]
     let MyIdentifier = "cell"
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return arr.count
@@ -152,10 +151,31 @@ class RefreshableTVC : UITableViewController{
         }
     }
     private var lastContentOffset: CGFloat = 0
-    private var isMoveUp: Bool = false
+    enum Direction {
+        case up
+        case down
+        case none
+    }
+    private var direction: Direction = .none
+    private var  isLastContentOffset = false
     private var beginDragOffset: CGFloat = 0
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        if refreshHeader != nil{
+        if !isLastContentOffset  {
+            self.lastContentOffset = scrollView.contentOffset.y
+            isLastContentOffset = true
+            return
+        }
+        if direction == .none{
+            if (self.lastContentOffset < scrollView.contentOffset.y) {
+                direction = .up
+            }
+            else if (self.lastContentOffset > scrollView.contentOffset.y) {
+                direction = .down
+            }
+        }
+        // update the new position acquired
+        
+        if direction == .down && refreshHeader != nil{
             if self.tableView.isDragging{
                 if -scrollView.contentOffset.y - scrollView.contentInset.top > (refreshHeader?.frame.height)! {
                     refreshHeader?.state = .pulling
@@ -169,35 +189,34 @@ class RefreshableTVC : UITableViewController{
                 doRefresh()
             }
         }
-        if footer != nil{
+        if direction == .up && footer != nil{
             if self.tableView.isDragging{
-                 let footerVisibleSection  = -(curentContentHeight - UIScreen.main.bounds.height - scrollView.contentOffset.y)
+                let footerVisibleSection  = -(curentContentHeight - UIScreen.main.bounds.height - scrollView.contentOffset.y)
                 if beginDragOffset == 0{
                     beginDragOffset = curentContentHeight - UIScreen.main.bounds.height
-                    print("beginDragOffset:",self.beginDragOffset )
+                    if beginDragOffset < 0 {
+                        beginDragOffset = UIScreen.main.bounds.height
+                    }
                 }
-                if footerVisibleSection > 20 {
+                if footerVisibleSection > (self.footer?.frame.height)! {
                     footer?.state = .pulling
-                }else if footerVisibleSection <= 20 {
+                }else if footerVisibleSection <= (self.footer?.frame.height)! {
                     footer?.state = .idle
                 }
             }else if footer?.state == .pulling {
-                self.delay(0.8){
-                    self.footer?.state = .refreshing
-                    scrollView.contentOffset.y = self.beginDragOffset + 25
-                    self.delay(2){
-                        if self.beginDragOffset != 0 {
-                            scrollView.contentOffset.y  = self.beginDragOffset
-                            self.footer?.state = .idle
-                        }
-                        self.beginDragOffset = 0
-                        self.doLoadMore()
-                    }
+                self.footer?.state = .refreshing
+                // stop scroll
+                scrollView.setContentOffset(scrollView.contentOffset, animated: false)
+                self.delay(3){
+                    scrollView.contentOffset.y = -64 // 
+                    self.doLoadMore()
                 }
-
             }
         }
+//        print("UIScreen.main.bounds.height",UIScreen.main.bounds.height,scrollView.frame.height,scrollView.contentOffset)
     }
+    let refreshHeaderStaySecond = 3
+    let refreshFooterStaySecond = 3
     func delay(_ s : Double ,_ done :(()->Void)? ){
         let when = DispatchTime.now() + s
         DispatchQueue.main.asyncAfter(deadline: when) {
@@ -207,11 +226,15 @@ class RefreshableTVC : UITableViewController{
     func doRefresh(){
         onRefresh(){
             self.refreshHeader?.state = .idle
+            self.direction = .none
+            self.beginDragOffset = 0
         }
     }
     func doLoadMore(){
         onLoadMore(){
             self.footer?.state = .idle
+            self.direction = .none
+//            self.beginDragOffset = 0
         }
     }
     func onRefresh(_ done : (()->Void)?){
@@ -251,20 +274,22 @@ class RefreshableTVC : UITableViewController{
         guard tableView.isUserInteractionEnabled else {
             return
         }
-        print(tableView.contentSize.height)
-        curentContentHeight = tableView.contentSize.height
-        footer!.frame.origin.y = curentContentHeight
+        if tableView.contentSize.height > UIScreen.main.bounds.height{
+            curentContentHeight = tableView.contentSize.height
+            footer!.frame.origin.y = curentContentHeight
+        }
     }
-    
-
     func addHeader(){
         refreshHeader = RefreshHeader()
         refreshHeader?.scrollView = self.tableView
         self.tableView.insertSubview(refreshHeader!, at: 0)
     }
-    func addFooter(){
+    func originFooterY ()-> Int{
         let footerOffset = tableView.contentSize.height > tableView.frame.height ? tableView.contentSize.height: tableView.frame.height
-        footer = RefreshFooter(Int(footerOffset - nav!.navigationBar.frame.height ))
+        return Int(footerOffset - nav!.navigationBar.frame.height )
+    }
+    func addFooter(){
+        footer = RefreshFooter(originFooterY())
         self.tableView.insertSubview(footer! , at: 0)
     }
 }
